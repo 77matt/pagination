@@ -28,7 +28,7 @@ async function loop(
 ) {
     // Make sure we have subscribers
     if (sub.observers.length >= 1 || first) {
-        if (forceHttps) {
+        if (!first && forceHttps) {
             url = url.replace("http://", "https://");
         }
         // Make the request
