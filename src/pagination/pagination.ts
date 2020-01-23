@@ -5,13 +5,14 @@ import { INextHeaders } from "../interfaces/core.interfaces";
 export function BuildPagination() {
     return function Pagination<T extends any>(
         url: string,
-        headers?: any
+        headers?: any,
+        forceHttps?: boolean
     ): Subject<T> {
         // Create the sub
         const sub: Subject<T> = new Subject();
 
         // Start the loop
-        setTimeout(() => loop(sub, url, headers, true));
+        setTimeout(() => loop(sub, url, headers, true, forceHttps));
 
         // Return the sub
         return sub;
@@ -22,10 +23,14 @@ async function loop(
     sub: Subject<any>,
     url: string,
     headers?: any,
-    first?: boolean
+    first?: boolean,
+    forceHttps?: boolean
 ) {
     // Make sure we have subscribers
     if (sub.observers.length >= 1 || first) {
+        if (forceHttps) {
+            url = url.replace("http://", "https://");
+        }
         // Make the request
         request(
             {
@@ -63,7 +68,7 @@ async function loop(
 
                 // Loop again if more records exist
                 if (nextHeaders.next) {
-                    loop(sub, nextHeaders.next, headers);
+                    loop(sub, nextHeaders.next, headers, false, forceHttps);
                 } else {
                     // If no next page, complete the sub
                     sub.complete();
