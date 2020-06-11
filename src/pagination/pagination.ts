@@ -6,13 +6,16 @@ export function BuildPagination() {
     return function Pagination<T extends any>(
         url: string,
         headers?: any,
-        forceHttps?: boolean
+        forceHttps?: boolean,
+        paramConfig?: { checkProp: string; nextProp: string; params?: any }
     ): Subject<T> {
         // Create the sub
         const sub: Subject<T> = new Subject();
 
         // Start the loop
-        setTimeout(() => loop(sub, url, headers, true, forceHttps));
+        setTimeout(() =>
+            loop(sub, url, headers, true, forceHttps, paramConfig)
+        );
 
         // Return the sub
         return sub;
@@ -24,7 +27,8 @@ async function loop(
     url: string,
     headers?: any,
     first?: boolean,
-    forceHttps?: boolean
+    forceHttps?: boolean,
+    paramConfig?: { checkProp: string; nextProp: string; params?: any }
 ) {
     // Make sure we have subscribers
     if (sub.observers.length >= 1 || first) {
@@ -35,7 +39,8 @@ async function loop(
         request(
             {
                 url: url,
-                headers: headers
+                headers: headers,
+                qs: paramConfig ? paramConfig.params : {}
             },
             (err: Error, res: any, body: any) => {
                 if (err) {
@@ -46,32 +51,60 @@ async function loop(
                 }
                 // Next the body
                 try {
-                    sub.next(JSON.parse(body));
+                    const parsedBody = JSON.parse(body);
+                    sub.next(parsedBody);
+
+                    if (paramConfig) {
+                        const { checkProp, nextProp } = paramConfig;
+                        if (!nextProp || !checkProp) {
+                            throw new Error("Missing Param Config");
+                        }
+
+                        const hasMore = parsedBody[checkProp];
+                        const nextValue = parsedBody[nextProp];
+                        if (hasMore && nextValue) {
+                            if (!paramConfig.params) {
+                                paramConfig.params = {};
+                            }
+                            paramConfig.params[nextProp] = nextValue;
+                            loop(
+                                sub,
+                                url,
+                                headers,
+                                false,
+                                forceHttps,
+                                paramConfig
+                            );
+                        } else {
+                            sub.complete();
+                            return;
+                        }
+                    } else {
+                        // Get the next headers
+                        const nextHeaders = parseNextHeaders(res.headers);
+
+                        if (!nextHeaders) {
+                            throw new Error("Not a paginated api");
+                        }
+
+                        // Loop again if more records exist
+                        if (nextHeaders.next) {
+                            loop(
+                                sub,
+                                nextHeaders.next,
+                                headers,
+                                false,
+                                forceHttps
+                            );
+                        } else {
+                            // If no next page, complete the sub
+                            sub.complete();
+                        }
+                    }
                 } catch (e) {
-                    console.error("Not a JSON response");
-                    console.error("URL", url);
-                    console.error("HEADERS", headers);
-                    console.error("BODY", body);
-                    console.log(e);
+                    console.error(e);
                     sub.complete();
                     return;
-                }
-
-                // Get the next headers
-                const nextHeaders = parseNextHeaders(res.headers);
-
-                if (!nextHeaders) {
-                    console.warn("Not a paginated api");
-                    sub.complete();
-                    return;
-                }
-
-                // Loop again if more records exist
-                if (nextHeaders.next) {
-                    loop(sub, nextHeaders.next, headers, false, forceHttps);
-                } else {
-                    // If no next page, complete the sub
-                    sub.complete();
                 }
             }
         );
